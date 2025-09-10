@@ -1,4 +1,17 @@
 
+/** Generic metadata object: key-value pairs as strings or undefined */
+export type CustomMetadata = {
+  [key: string]: string | undefined;
+};
+
+/** Attachment type for storing file and its metadata */
+export interface Attachment {
+  fileName: string;
+  metadata: CustomMetadata | null;
+}
+
+
+
 import React, { useState } from "react";
 import { useFileMetadata } from "./useFileMetadata";
 import type { CustomMetadata } from "./types";
