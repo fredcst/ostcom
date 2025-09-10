@@ -1,4 +1,51 @@
 
+import { useCallback } from "react";
+import type { CustomMetadata } from "./types";
+import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf"; // modern import
+import pdfWorker from "pdfjs-dist/legacy/build/pdf.worker.entry"; // local worker
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
+
+export const usePdfMetadata = (onChange: (metadata: CustomMetadata | null) => void) => {
+  return useCallback(async (file: File | null) => {
+    if (!file) {
+      onChange(null);
+      return;
+    }
+
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      const info = await pdf.getMetadata();
+
+      const metadata: CustomMetadata = {};
+
+      if (info.info) {
+        Object.entries(info.info).forEach(([key, value]) => {
+          metadata[key] = value?.toString();
+        });
+      }
+
+      if (info.metadata) {
+        info.metadata.getAll().forEach((entry) => {
+          if (entry) {
+            Object.entries(entry).forEach(([k, v]) => {
+              metadata[k] = v?.toString();
+            });
+          }
+        });
+      }
+
+      onChange(metadata);
+    } catch (err) {
+      console.error("Error reading PDF metadata:", err);
+      onChange(null);
+    }
+  }, [onChange]);
+};
+
+
+
 /** Generic metadata object: key-value pairs as strings or undefined */
 export type CustomMetadata = {
   [key: string]: string | undefined;
