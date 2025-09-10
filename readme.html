@@ -1,5 +1,75 @@
 
 import { useCallback } from "react";
+import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf";
+
+export interface PdfMetadata {
+  [key: string]: string | PdfMetadata | undefined;
+}
+
+/**
+ * Hook: usePdfMetadataPdfJs
+ * 
+ * Reads PDF metadata (Info dictionary + XMP) using pdfjs-dist.
+ */
+export const usePdfMetadataPdfJs = (
+  onChange: (metadata: PdfMetadata | null) => void
+) => {
+  const handleFile = useCallback(async (file: File | null) => {
+    if (!file) {
+      onChange(null);
+      return;
+    }
+
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+
+      // Load PDF document
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+      const metadata: PdfMetadata = {};
+
+      // 1️⃣ Extract Info dictionary (Title, Author, etc.)
+      const meta = await pdf.getMetadata();
+      if (meta.info) {
+        for (const [key, value] of Object.entries(meta.info)) {
+          metadata[key] = value?.toString() || undefined;
+        }
+      }
+
+      // 2️⃣ Extract XMP metadata (optional)
+      if (meta.metadata) {
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(meta.metadata.getRaw(), "application/xml");
+
+        const parseElement = (el: Element): PdfMetadata => {
+          const obj: PdfMetadata = {};
+          for (let i = 0; i < el.children.length; i++) {
+            const child = el.children[i];
+            if (child.children.length > 0) {
+              obj[child.tagName] = parseElement(child);
+            } else {
+              obj[child.tagName] = child.textContent || undefined;
+            }
+          }
+          return obj;
+        };
+
+        metadata["xmp"] = parseElement(xmlDoc.documentElement);
+      }
+
+      onChange(metadata);
+    } catch (err) {
+      console.error("Error reading PDF metadata:", err);
+      onChange(null);
+    }
+  }, [onChange]);
+
+  return handleFile;
+};
+
+
+
+import { useCallback } from "react";
 import { PDFDocument } from "pdf-lib";
 
 export interface PdfMetadata {
