@@ -1,5 +1,3 @@
-
-
 import React, { useState } from "react";
 import JSZip from "jszip";
 
@@ -26,7 +24,7 @@ const DocxMetadataReader: React.FC = () => {
       if (coreXmlStr) {
         const coreXml = parser.parseFromString(coreXmlStr, "application/xml");
         Array.from(coreXml.documentElement.childNodes).forEach((node) => {
-          if (node.nodeType === 1) { // Element node
+          if (node.nodeType === 1) {
             allMetadata[node.nodeName] = node.textContent || undefined;
           }
         });
@@ -37,10 +35,25 @@ const DocxMetadataReader: React.FC = () => {
       if (appXmlStr) {
         const appXml = parser.parseFromString(appXmlStr, "application/xml");
         Array.from(appXml.documentElement.childNodes).forEach((node) => {
-          if (node.nodeType === 1) { // Element node
+          if (node.nodeType === 1) {
             allMetadata[node.nodeName] = node.textContent || undefined;
           }
         });
+      }
+
+      // --- Custom properties ---
+      const customXmlStr = await zip.file("docProps/custom.xml")?.async("string");
+      if (customXmlStr) {
+        const customXml = parser.parseFromString(customXmlStr, "application/xml");
+        const properties = customXml.getElementsByTagName("property");
+        for (let i = 0; i < properties.length; i++) {
+          const prop = properties[i];
+          const name = prop.getAttribute("name");
+          const valueNode = prop.firstElementChild;
+          if (name && valueNode) {
+            allMetadata[name] = valueNode.textContent || undefined;
+          }
+        }
       }
 
       setMetadata(allMetadata);
@@ -49,28 +62,6 @@ const DocxMetadataReader: React.FC = () => {
       setMetadata(null);
     }
   };
-
-  return (
-    <div>
-      <h2>DOCX Metadata Reader</h2>
-      <input type="file" accept=".docx" onChange={handleFileChange} />
-      {metadata && (
-        <div style={{ marginTop: "1rem" }}>
-          <h3>Metadata:</h3>
-          <ul>
-            {Object.entries(metadata).map(([key, value]) => (
-              <li key={key}>
-                <strong>{key}:</strong> {value || "N/A"}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
-};
-
-export default DocxMetadataReader;
 
   return (
     <div>
