@@ -1,47 +1,54 @@
+
 import React, { useState } from "react";
+import { useDocxCustomMetadata, CustomMetadata } from "./useDocxCustomMetadata";
+
+const MyFileUploader: React.FC = () => {
+  const [metadata, setMetadata] = useState<CustomMetadata | null>(null);
+  const handleFile = useDocxCustomMetadata(setMetadata);
+
+  return (
+    <div>
+      <input
+        type="file"
+        accept=".docx"
+        onChange={(e) => handleFile(e.target.files?.[0] || null)}
+      />
+      {metadata && (
+        <pre>{JSON.stringify(metadata, null, 2)}</pre>
+      )}
+    </div>
+  );
+};
+
+
+import { useCallback } from "react";
 import JSZip from "jszip";
 
-interface DocxMetadata {
+export interface CustomMetadata {
   [key: string]: string | undefined;
 }
 
-const DocxMetadataReader: React.FC = () => {
-  const [metadata, setMetadata] = useState<DocxMetadata | null>(null);
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+/**
+ * Hook: useDocxCustomMetadata
+ * 
+ * @param onChange Callback triggered when metadata is read
+ */
+export const useDocxCustomMetadata = (
+  onChange: (metadata: CustomMetadata | null) => void
+) => {
+  const handleFile = useCallback(async (file: File | null) => {
+    if (!file) {
+      onChange(null);
+      return;
+    }
 
     try {
       const arrayBuffer = await file.arrayBuffer();
       const zip = await JSZip.loadAsync(arrayBuffer);
 
       const parser = new DOMParser();
-      const allMetadata: DocxMetadata = {};
+      const customMetadata: CustomMetadata = {};
 
-      // --- Core properties ---
-      const coreXmlStr = await zip.file("docProps/core.xml")?.async("string");
-      if (coreXmlStr) {
-        const coreXml = parser.parseFromString(coreXmlStr, "application/xml");
-        Array.from(coreXml.documentElement.childNodes).forEach((node) => {
-          if (node.nodeType === 1) {
-            allMetadata[node.nodeName] = node.textContent || undefined;
-          }
-        });
-      }
-
-      // --- App properties ---
-      const appXmlStr = await zip.file("docProps/app.xml")?.async("string");
-      if (appXmlStr) {
-        const appXml = parser.parseFromString(appXmlStr, "application/xml");
-        Array.from(appXml.documentElement.childNodes).forEach((node) => {
-          if (node.nodeType === 1) {
-            allMetadata[node.nodeName] = node.textContent || undefined;
-          }
-        });
-      }
-
-      // --- Custom properties ---
       const customXmlStr = await zip.file("docProps/custom.xml")?.async("string");
       if (customXmlStr) {
         const customXml = parser.parseFromString(customXmlStr, "application/xml");
@@ -51,39 +58,25 @@ const DocxMetadataReader: React.FC = () => {
           const name = prop.getAttribute("name");
           const valueNode = prop.firstElementChild;
           if (name && valueNode) {
-            allMetadata[name] = valueNode.textContent || undefined;
+            customMetadata[name] = valueNode.textContent || undefined;
           }
         }
       }
 
-      setMetadata(allMetadata);
+      onChange(customMetadata);
     } catch (err) {
-      console.error("Error reading DOCX metadata:", err);
-      setMetadata(null);
+      console.error("Error reading DOCX custom metadata:", err);
+      onChange(null);
     }
-  };
+  }, [onChange]);
 
-  return (
-    <div>
-      <h2>DOCX Metadata Reader</h2>
-      <input type="file" accept=".docx" onChange={handleFileChange} />
-      {metadata && (
-        <div style={{ marginTop: "1rem" }}>
-          <h3>Metadata:</h3>
-          <ul>
-            {Object.entries(metadata).map(([key, value]) => (
-              <li key={key}>
-                <strong>{key}:</strong> {value || "N/A"}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
+  return handleFile;
 };
 
-export default DocxMetadataReader;
+
+
+
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
