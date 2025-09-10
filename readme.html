@@ -1,5 +1,76 @@
 
 import { useCallback } from "react";
+import { PDFDocument } from "pdf-lib";
+
+export interface PdfMetadata {
+  [key: string]: string | PdfMetadata | undefined;
+}
+
+/**
+ * Hook: usePdfMetadata
+ * 
+ * @param onChange Callback triggered when metadata is read
+ */
+export const usePdfMetadata = (
+  onChange: (metadata: PdfMetadata | null) => void
+) => {
+  const handleFile = useCallback(async (file: File | null) => {
+    if (!file) {
+      onChange(null);
+      return;
+    }
+
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const pdfDoc = await PDFDocument.load(arrayBuffer);
+
+      const metadata: PdfMetadata = {};
+
+      // 1️⃣ Extract PDF Info Dictionary
+      const info = pdfDoc.getInfoDict();
+      if (info) {
+        for (const [key, value] of Object.entries(info)) {
+          metadata[key] = value?.toString() || undefined;
+        }
+      }
+
+      // 2️⃣ Extract XMP metadata (if any)
+      const xmpXmlStr = pdfDoc.getXmpMetadata();
+      if (xmpXmlStr) {
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmpXmlStr, "application/xml");
+
+        const parseElement = (el: Element): PdfMetadata => {
+          const obj: PdfMetadata = {};
+          for (let i = 0; i < el.children.length; i++) {
+            const child = el.children[i];
+            if (child.children.length > 0) {
+              obj[child.tagName] = parseElement(child);
+            } else {
+              obj[child.tagName] = child.textContent || undefined;
+            }
+          }
+          return obj;
+        };
+
+        metadata["xmp"] = parseElement(xmlDoc.documentElement);
+      }
+
+      onChange(metadata);
+    } catch (err) {
+      console.error("Error reading PDF metadata:", err);
+      onChange(null);
+    }
+  }, [onChange]);
+
+  return handleFile;
+};
+
+
+
+
+
+import { useCallback } from "react";
 import type { CustomMetadata } from "./types";
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf"; // modern import
 import pdfWorker from "pdfjs-dist/legacy/build/pdf.worker.entry"; // local worker
