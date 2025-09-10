@@ -1,94 +1,69 @@
 
-import * as exifr from "exifr";   // imágenes
-import JSZip from "jszip";        // office
-import { getDocument } from "pdfjs-dist";  // pdf
 
-// --- Convierte XML en JSON ---
-const xmlToJson = (xml: Document): any => {
-  const obj: any = {};
-  if (xml.nodeType === 1 && xml.attributes) {
-    for (let j = 0; j < xml.attributes.length; j++) {
-      const attr = xml.attributes.item(j);
-      if (attr) obj[attr.nodeName] = attr.nodeValue;
+import React, { useState } from "react";
+import JSZip from "jszip";
+
+interface DocxMetadata {
+  title?: string;
+  author?: string;
+  created?: string;
+  modified?: string;
+  [key: string]: string | undefined;
+}
+
+const DocxMetadataReader: React.FC = () => {
+  const [metadata, setMetadata] = useState<DocxMetadata | null>(null);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const zip = await JSZip.loadAsync(arrayBuffer);
+
+      // Read core properties
+      const coreXml = await zip.file("docProps/core.xml")?.async("string");
+      if (!coreXml) throw new Error("core.xml not found");
+
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(coreXml, "application/xml");
+
+      const newMetadata: DocxMetadata = {
+        title: xmlDoc.getElementsByTagName("dc:title")[0]?.textContent,
+        author: xmlDoc.getElementsByTagName("dc:creator")[0]?.textContent,
+        created: xmlDoc.getElementsByTagName("dcterms:created")[0]?.textContent,
+        modified: xmlDoc.getElementsByTagName("dcterms:modified")[0]?.textContent,
+      };
+
+      setMetadata(newMetadata);
+    } catch (err) {
+      console.error("Error reading DOCX metadata:", err);
+      setMetadata(null);
     }
-  }
-  if (xml.hasChildNodes()) {
-    for (let i = 0; i < xml.childNodes.length; i++) {
-      const item = xml.childNodes.item(i);
-      if (!item) continue;
-      const nodeName = item.nodeName;
-      if (typeof obj[nodeName] === "undefined") {
-        obj[nodeName] = xmlToJson(item as Document);
-      } else {
-        if (!Array.isArray(obj[nodeName])) {
-          obj[nodeName] = [obj[nodeName]];
-        }
-        obj[nodeName].push(xmlToJson(item as Document));
-      }
-    }
-  }
-  return obj;
+  };
+
+  return (
+    <div>
+      <h2>DOCX Metadata Reader</h2>
+      <input type="file" accept=".docx" onChange={handleFileChange} />
+      {metadata && (
+        <div style={{ marginTop: "1rem" }}>
+          <h3>Metadata:</h3>
+          <ul>
+            {Object.entries(metadata).map(([key, value]) => (
+              <li key={key}>
+                <strong>{key}:</strong> {value || "N/A"}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
 };
 
-// --- Detecta y devuelve metadatos ---
-const readMetadata = async (file: File) => {
-  if (file.type.startsWith("image/")) {
-    return await exifr.parse(file); // imágenes
-  } else if (file.type === "application/pdf") {
-    const buffer = await file.arrayBuffer();
-    const pdf = await getDocument({ data: buffer }).promise;
-    const meta = await pdf.getMetadata();
-    return { ...meta.info, ...meta.metadata }; // PDF
-  } else if (
-    file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || // DOCX
-    file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||      // XLSX
-    file.type === "application/vnd.openxmlformats-officedocument.presentationml.presentation" // PPTX
-  ) {
-    const buffer = await file.arrayBuffer();
-    const zip = await JSZip.loadAsync(buffer);
-    const coreXml = await zip.file("docProps/core.xml")?.async("string");
-    if (coreXml) {
-      const xmlDoc = new DOMParser().parseFromString(coreXml, "application/xml");
-      return xmlToJson(xmlDoc); // JSON
-    }
-  }
-  return null;
-};
-
-// --- Busca claves prohibidas ---
-const checkForbiddenMET = async (file: File) => {
-  try {
-    const metadata: any = await readMetadata(file);
-    console.log("Metadata JSON:", metadata);
-
-    if (!metadata) return false;
-
-    const forbidden = ["confidentiel", "secret", "privé"];
-    const metaStr = JSON.stringify(metadata).toLowerCase();
-    return forbidden.some((k) => metaStr.includes(k.toLowerCase()));
-  } catch (error) {
-    console.error("Error leyendo metadatos:", error);
-    return false;
-  }
-};
-
-// --- Tu onchange adaptado ---
-const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-  if (!e.target.files) return;
-  const files = Array.from(e.target.files);
-
-  const safeFiles = await Promise.all(files.map((f) => checkForbiddenMET(f)));
-
-  // si alguno contiene clave prohibida, no se agrega
-  if (safeFiles.some((isForbidden) => isForbidden)) {
-    setAttachments([]);
-    alert("Archivo contiene metadatos prohibidos");
-  } else {
-    setAttachments((prev) => [...prev, ...files]);
-  }
-};
-
-
+export default DocxMetadataReader;
 <!DOCTYPE html>
 <html lang="en">
 <head>
