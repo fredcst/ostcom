@@ -1,3 +1,20 @@
+import JSZip from "jszip";
+
+async function readDocxMetadata(file) {
+  const reader = new FileReader();
+  reader.onload = async () => {
+    const zip = await JSZip.loadAsync(reader.result);
+    const coreProps = await zip.file("docProps/core.xml").async("string");
+    console.log(coreProps); // XML con metadatos (autor, título, etc.)
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+
+
+
+
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
