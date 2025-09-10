@@ -1,42 +1,73 @@
 
 import React, { useState } from "react";
-import { useDocxCustomMetadata, CustomMetadata } from "./useDocxCustomMetadata";
+import { useFileMetadata } from "./useFileMetadata";
+import type { CustomMetadata } from "./types";
 
-const MyFileUploader: React.FC = () => {
-  const [metadata, setMetadata] = useState<CustomMetadata | null>(null);
-  const handleFile = useDocxCustomMetadata(setMetadata);
+interface Attachment {
+  fileName: string;
+  metadata: CustomMetadata | null;
+}
+
+const MultiFileMetadataReader: React.FC = () => {
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+
+  const handleFile = useFileMetadata((metadata, fileName?: string) => {
+    if (!fileName) return;
+
+    setAttachments((prev) => [
+      ...prev,
+      { fileName, metadata }
+    ]);
+  });
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    // Clear previous attachments
+    setAttachments([]);
+
+    Array.from(files).forEach((file) => {
+      handleFile(file, file.name); // Pass the file and its name
+    });
+  };
 
   return (
     <div>
       <input
         type="file"
-        accept=".docx"
-        onChange={(e) => handleFile(e.target.files?.[0] || null)}
+        accept=".docx,.xlsx,.pptx,.pdf"
+        multiple
+        onChange={handleInputChange}
       />
-      {metadata && (
-        <pre>{JSON.stringify(metadata, null, 2)}</pre>
+
+      {attachments.length > 0 && (
+        <div style={{ marginTop: "1rem" }}>
+          {attachments.map((att) => (
+            <div key={att.fileName} style={{ marginBottom: "1rem" }}>
+              <h4>{att.fileName}</h4>
+              <pre>{JSON.stringify(att.metadata, null, 2)}</pre>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
 };
 
+export default MultiFileMetadataReader;
+
+
+
 
 import { useCallback } from "react";
-import JSZip from "jszip";
+import type { CustomMetadata } from "./types";
+import * as pdfjsLib from "pdfjs-dist";
 
-export interface CustomMetadata {
-  [key: string]: string | undefined;
-}
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
-/**
- * Hook: useDocxCustomMetadata
- * 
- * @param onChange Callback triggered when metadata is read
- */
-export const useDocxCustomMetadata = (
-  onChange: (metadata: CustomMetadata | null) => void
-) => {
-  const handleFile = useCallback(async (file: File | null) => {
+export const usePdfMetadata = (onChange: (metadata: CustomMetadata | null) => void) => {
+  return useCallback(async (file: File | null) => {
     if (!file) {
       onChange(null);
       return;
@@ -44,33 +75,63 @@ export const useDocxCustomMetadata = (
 
     try {
       const arrayBuffer = await file.arrayBuffer();
-      const zip = await JSZip.loadAsync(arrayBuffer);
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      const info = await pdf.getMetadata();
 
-      const parser = new DOMParser();
-      const customMetadata: CustomMetadata = {};
-
-      const customXmlStr = await zip.file("docProps/custom.xml")?.async("string");
-      if (customXmlStr) {
-        const customXml = parser.parseFromString(customXmlStr, "application/xml");
-        const properties = customXml.getElementsByTagName("property");
-        for (let i = 0; i < properties.length; i++) {
-          const prop = properties[i];
-          const name = prop.getAttribute("name");
-          const valueNode = prop.firstElementChild;
-          if (name && valueNode) {
-            customMetadata[name] = valueNode.textContent || undefined;
-          }
-        }
+      // info.info contains the standard PDF metadata
+      const metadata: CustomMetadata = {};
+      if (info.info) {
+        Object.entries(info.info).forEach(([key, value]) => {
+          metadata[key] = value?.toString();
+        });
       }
 
-      onChange(customMetadata);
+      // info.metadata can contain XMP data
+      if (info.metadata) {
+        info.metadata.getAll().forEach((entry) => {
+          if (entry) {
+            Object.entries(entry).forEach(([k, v]) => {
+              metadata[k] = v?.toString();
+            });
+          }
+        });
+      }
+
+      onChange(metadata);
     } catch (err) {
-      console.error("Error reading DOCX custom metadata:", err);
+      console.error("Error reading PDF metadata:", err);
       onChange(null);
     }
   }, [onChange]);
+};
 
-  return handleFile;
+
+
+import { useCallback } from "react";
+import { useDocxCustomMetadata } from "./useDocxCustomMetadata";
+import { usePdfMetadata } from "./usePdfMetadata";
+import type { CustomMetadata } from "./types";
+
+export const useFileMetadata = (onChange: (metadata: CustomMetadata | null) => void) => {
+  const handleDocx = useDocxCustomMetadata(onChange);
+  const handlePdf = usePdfMetadata(onChange);
+
+  return useCallback((file: File | null) => {
+    if (!file) {
+      onChange(null);
+      return;
+    }
+
+    const extension = file.name.split(".").pop()?.toLowerCase();
+    if (extension === "pdf") {
+      handlePdf(file);
+    } else if (["docx", "xlsx", "pptx"].includes(extension || "")) {
+      handleDocx(file);
+    } else {
+      console.warn("Unsupported file type for metadata extraction");
+      onChange(null);
+    }
+  }, [handleDocx, handlePdf, onChange]);
 };
 
 
