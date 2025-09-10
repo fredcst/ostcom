@@ -4,10 +4,6 @@ import React, { useState } from "react";
 import JSZip from "jszip";
 
 interface DocxMetadata {
-  title?: string;
-  author?: string;
-  created?: string;
-  modified?: string;
   [key: string]: string | undefined;
 }
 
@@ -22,26 +18,59 @@ const DocxMetadataReader: React.FC = () => {
       const arrayBuffer = await file.arrayBuffer();
       const zip = await JSZip.loadAsync(arrayBuffer);
 
-      // Read core properties
-      const coreXml = await zip.file("docProps/core.xml")?.async("string");
-      if (!coreXml) throw new Error("core.xml not found");
-
       const parser = new DOMParser();
-      const xmlDoc = parser.parseFromString(coreXml, "application/xml");
+      const allMetadata: DocxMetadata = {};
 
-      const newMetadata: DocxMetadata = {
-        title: xmlDoc.getElementsByTagName("dc:title")[0]?.textContent,
-        author: xmlDoc.getElementsByTagName("dc:creator")[0]?.textContent,
-        created: xmlDoc.getElementsByTagName("dcterms:created")[0]?.textContent,
-        modified: xmlDoc.getElementsByTagName("dcterms:modified")[0]?.textContent,
-      };
+      // --- Core properties ---
+      const coreXmlStr = await zip.file("docProps/core.xml")?.async("string");
+      if (coreXmlStr) {
+        const coreXml = parser.parseFromString(coreXmlStr, "application/xml");
+        Array.from(coreXml.documentElement.childNodes).forEach((node) => {
+          if (node.nodeType === 1) { // Element node
+            allMetadata[node.nodeName] = node.textContent || undefined;
+          }
+        });
+      }
 
-      setMetadata(newMetadata);
+      // --- App properties ---
+      const appXmlStr = await zip.file("docProps/app.xml")?.async("string");
+      if (appXmlStr) {
+        const appXml = parser.parseFromString(appXmlStr, "application/xml");
+        Array.from(appXml.documentElement.childNodes).forEach((node) => {
+          if (node.nodeType === 1) { // Element node
+            allMetadata[node.nodeName] = node.textContent || undefined;
+          }
+        });
+      }
+
+      setMetadata(allMetadata);
     } catch (err) {
       console.error("Error reading DOCX metadata:", err);
       setMetadata(null);
     }
   };
+
+  return (
+    <div>
+      <h2>DOCX Metadata Reader</h2>
+      <input type="file" accept=".docx" onChange={handleFileChange} />
+      {metadata && (
+        <div style={{ marginTop: "1rem" }}>
+          <h3>Metadata:</h3>
+          <ul>
+            {Object.entries(metadata).map(([key, value]) => (
+              <li key={key}>
+                <strong>{key}:</strong> {value || "N/A"}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default DocxMetadataReader;
 
   return (
     <div>
