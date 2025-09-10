@@ -1,38 +1,65 @@
-import * as exifr from "exifr";   // para imágenes
-import JSZip from "jszip";        // para DOCX, XLSX, PPTX
-import { getDocument } from "pdfjs-dist";  // para PDF
 
-// --- Detecta metadatos según tipo de archivo ---
+import * as exifr from "exifr";   // imágenes
+import JSZip from "jszip";        // office
+import { getDocument } from "pdfjs-dist";  // pdf
+
+// --- Convierte XML en JSON ---
+const xmlToJson = (xml: Document): any => {
+  const obj: any = {};
+  if (xml.nodeType === 1 && xml.attributes) {
+    for (let j = 0; j < xml.attributes.length; j++) {
+      const attr = xml.attributes.item(j);
+      if (attr) obj[attr.nodeName] = attr.nodeValue;
+    }
+  }
+  if (xml.hasChildNodes()) {
+    for (let i = 0; i < xml.childNodes.length; i++) {
+      const item = xml.childNodes.item(i);
+      if (!item) continue;
+      const nodeName = item.nodeName;
+      if (typeof obj[nodeName] === "undefined") {
+        obj[nodeName] = xmlToJson(item as Document);
+      } else {
+        if (!Array.isArray(obj[nodeName])) {
+          obj[nodeName] = [obj[nodeName]];
+        }
+        obj[nodeName].push(xmlToJson(item as Document));
+      }
+    }
+  }
+  return obj;
+};
+
+// --- Detecta y devuelve metadatos ---
 const readMetadata = async (file: File) => {
   if (file.type.startsWith("image/")) {
-    // 👉 Imágenes
-    return await exifr.parse(file);
+    return await exifr.parse(file); // imágenes
   } else if (file.type === "application/pdf") {
-    // 👉 PDF
     const buffer = await file.arrayBuffer();
     const pdf = await getDocument({ data: buffer }).promise;
     const meta = await pdf.getMetadata();
-    return { ...meta.info, ...meta.metadata };
+    return { ...meta.info, ...meta.metadata }; // PDF
   } else if (
     file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || // DOCX
     file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||      // XLSX
     file.type === "application/vnd.openxmlformats-officedocument.presentationml.presentation" // PPTX
   ) {
-    // 👉 Archivos Office
     const buffer = await file.arrayBuffer();
     const zip = await JSZip.loadAsync(buffer);
     const coreXml = await zip.file("docProps/core.xml")?.async("string");
-    return { coreXml }; // aquí tienes el XML, lo puedes parsear con DOMParser
-  } else {
-    return null; // tipo no soportado
+    if (coreXml) {
+      const xmlDoc = new DOMParser().parseFromString(coreXml, "application/xml");
+      return xmlToJson(xmlDoc); // JSON
+    }
   }
+  return null;
 };
 
-// --- Tu checkForbiddenMET adaptado ---
+// --- Busca claves prohibidas ---
 const checkForbiddenMET = async (file: File) => {
   try {
     const metadata: any = await readMetadata(file);
-    console.log("Metadata:", metadata);
+    console.log("Metadata JSON:", metadata);
 
     if (!metadata) return false;
 
@@ -45,39 +72,21 @@ const checkForbiddenMET = async (file: File) => {
   }
 };
 
-// --- Tu onFileChange adaptado ---
+// --- Tu onchange adaptado ---
 const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
   if (!e.target.files) return;
   const files = Array.from(e.target.files);
 
-  const invalidFiles = files.filter((file) =>
-    [
-      "application/pdf",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "application/vnd.ms-powerpoint",
-    ].includes(file.type)
-  );
+  const safeFiles = await Promise.all(files.map((f) => checkForbiddenMET(f)));
 
-  if (invalidFiles.length > 0) {
-    setShowPopup(true);
+  // si alguno contiene clave prohibida, no se agrega
+  if (safeFiles.some((isForbidden) => isForbidden)) {
+    setAttachments([]);
+    alert("Archivo contiene metadatos prohibidos");
   } else {
-    setShowPopup(false);
-
-    const safeFiles = await Promise.all(
-      files.map((f) => checkForbiddenMET(f))
-    );
-
-    if (safeFiles.some((isForbidden) => isForbidden)) {
-      setAttachments([]);
-    } else {
-      setAttachments((prev) => [...prev, ...files]);
-    }
+    setAttachments((prev) => [...prev, ...files]);
   }
 };
-
-
-
-
 
 
 <!DOCTYPE html>
