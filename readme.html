@@ -1,14 +1,79 @@
-import JSZip from "jszip";
+import * as exifr from "exifr";   // para imágenes
+import JSZip from "jszip";        // para DOCX, XLSX, PPTX
+import { getDocument } from "pdfjs-dist";  // para PDF
 
-async function readDocxMetadata(file) {
-  const reader = new FileReader();
-  reader.onload = async () => {
-    const zip = await JSZip.loadAsync(reader.result);
-    const coreProps = await zip.file("docProps/core.xml").async("string");
-    console.log(coreProps); // XML con metadatos (autor, título, etc.)
-  };
-  reader.readAsArrayBuffer(file);
-}
+// --- Detecta metadatos según tipo de archivo ---
+const readMetadata = async (file: File) => {
+  if (file.type.startsWith("image/")) {
+    // 👉 Imágenes
+    return await exifr.parse(file);
+  } else if (file.type === "application/pdf") {
+    // 👉 PDF
+    const buffer = await file.arrayBuffer();
+    const pdf = await getDocument({ data: buffer }).promise;
+    const meta = await pdf.getMetadata();
+    return { ...meta.info, ...meta.metadata };
+  } else if (
+    file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || // DOCX
+    file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||      // XLSX
+    file.type === "application/vnd.openxmlformats-officedocument.presentationml.presentation" // PPTX
+  ) {
+    // 👉 Archivos Office
+    const buffer = await file.arrayBuffer();
+    const zip = await JSZip.loadAsync(buffer);
+    const coreXml = await zip.file("docProps/core.xml")?.async("string");
+    return { coreXml }; // aquí tienes el XML, lo puedes parsear con DOMParser
+  } else {
+    return null; // tipo no soportado
+  }
+};
+
+// --- Tu checkForbiddenMET adaptado ---
+const checkForbiddenMET = async (file: File) => {
+  try {
+    const metadata: any = await readMetadata(file);
+    console.log("Metadata:", metadata);
+
+    if (!metadata) return false;
+
+    const forbidden = ["confidentiel", "secret", "privé"];
+    const metaStr = JSON.stringify(metadata).toLowerCase();
+    return forbidden.some((k) => metaStr.includes(k.toLowerCase()));
+  } catch (error) {
+    console.error("Error leyendo metadatos:", error);
+    return false;
+  }
+};
+
+// --- Tu onFileChange adaptado ---
+const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  if (!e.target.files) return;
+  const files = Array.from(e.target.files);
+
+  const invalidFiles = files.filter((file) =>
+    [
+      "application/pdf",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.ms-powerpoint",
+    ].includes(file.type)
+  );
+
+  if (invalidFiles.length > 0) {
+    setShowPopup(true);
+  } else {
+    setShowPopup(false);
+
+    const safeFiles = await Promise.all(
+      files.map((f) => checkForbiddenMET(f))
+    );
+
+    if (safeFiles.some((isForbidden) => isForbidden)) {
+      setAttachments([]);
+    } else {
+      setAttachments((prev) => [...prev, ...files]);
+    }
+  }
+};
 
 
 
