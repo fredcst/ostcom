@@ -4,6 +4,59 @@ const checkFile = async (file: File): Promise<boolean> => {
   const lowerName = file.name.toLowerCase();
 
   if (lowerName.endsWith(".docx")) {
+    const metadata = await handleDocx(file); 
+    // 👆 handleDocx debería devolver metadata, no solo ejecutarse
+
+    if (!metadata) return true; // si no hay metadata, es válido
+
+    const forbidden = Object.keys(metadata).some((key) =>
+      forbiddenKeys.some((fk) => key.includes(fk))
+    );
+
+    if (forbidden) {
+      alert(`El archivo "${file.name}" contiene keys prohibidas y no se puede añadir.`);
+      return false;  // 👈 aquí estaba el fallo: antes no devolvías nada
+    }
+
+    return true;
+  }
+
+  if (lowerName.endsWith(".pdf")) {
+    try {
+      const metadataJson: Record<string, string | null> | null =
+        await readPdfMetadata(file);
+
+      if (!metadataJson) return false;
+
+      const forbidden = Object.keys(metadataJson).some((key) =>
+        forbiddenKeys.some((fk) => key.includes(fk))
+      );
+
+      if (forbidden) {
+        alert(`El archivo "${file.name}" contiene keys prohibidas y no se puede añadir.`);
+        return false;
+      }
+
+      return true;
+    } catch (err) {
+      console.error("Error leyendo PDF:", file.name, err);
+      return false;
+    }
+  }
+
+  alert(`Archivo "${file.name}" no soportado`);
+  return false;
+};
+
+
+
+
+const checkFile = async (file: File): Promise<boolean> => {
+  if (!file) return false;
+
+  const lowerName = file.name.toLowerCase();
+
+  if (lowerName.endsWith(".docx")) {
     handleDocx(file);
     return true; // 👈 ahora sí añade DOCX
   } else if (lowerName.endsWith(".pdf")) {
