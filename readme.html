@@ -1,3 +1,141 @@
+import React, { useState } from "react";
+
+// 👇 define el tipo de metadata
+type CustomMetadata = Record<string, string | null>;
+
+// 👇 keys prohibidas de ejemplo
+const forbiddenKeys = ["author", "company"];
+
+// 👇 función para leer metadata de un DOCX
+const handleDocx = async (file: File): Promise<CustomMetadata | null> => {
+  try {
+    // aquí iría tu lógica real de extracción de metadata DOCX
+    // de momento devolvemos un ejemplo para probar
+    const metadata: CustomMetadata = {
+      title: "Documento de prueba",
+      author: "Usuario"
+    };
+
+    return metadata;
+  } catch (err) {
+    console.error("Error leyendo DOCX:", file.name, err);
+    return null;
+  }
+};
+
+// 👇 función para leer metadata de un PDF
+const readPdfMetadata = async (file: File): Promise<CustomMetadata | null> => {
+  try {
+    // lógica real de PDF aquí
+    // ejemplo de metadata
+    return {
+      subject: "Un PDF",
+      company: "EmpresaX"
+    };
+  } catch (err) {
+    console.error("Error leyendo PDF:", file.name, err);
+    return null;
+  }
+};
+
+// 👇 checkFile para validar DOCX y PDF
+const checkFile = async (file: File): Promise<boolean> => {
+  if (!file) return false;
+
+  const lowerName = file.name.toLowerCase();
+
+  if (lowerName.endsWith(".docx")) {
+    const metadata = await handleDocx(file);
+
+    if (!metadata) return true; // sin metadata, aceptamos
+
+    const forbidden = Object.keys(metadata).some((key) =>
+      forbiddenKeys.some((fk) => key.includes(fk))
+    );
+
+    if (forbidden) {
+      alert(`El archivo "${file.name}" contiene keys prohibidas y no se puede añadir.`);
+      return false;
+    }
+
+    return true;
+  }
+
+  if (lowerName.endsWith(".pdf")) {
+    try {
+      const metadataJson = await readPdfMetadata(file);
+      if (!metadataJson) return false;
+
+      const forbidden = Object.keys(metadataJson).some((key) =>
+        forbiddenKeys.some((fk) => key.includes(fk))
+      );
+
+      if (forbidden) {
+        alert(`El archivo "${file.name}" contiene keys prohibidas y no se puede añadir.`);
+        return false;
+      }
+
+      return true;
+    } catch (err) {
+      console.error("Error leyendo PDF:", file.name, err);
+      return false;
+    }
+  }
+
+  alert(`Archivo "${file.name}" no soportado`);
+  return false;
+};
+
+// 👇 componente principal
+export default function Uploader() {
+  const [attachments, setAttachments] = useState<
+    { file: File; metadata: CustomMetadata }[]
+  >([]);
+
+  const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+
+    const results = await Promise.all(
+      files.map(async (file) => ({
+        file,
+        isValid: await checkFile(file),
+      }))
+    );
+
+    const newAttachments = results
+      .filter((r) => r.isValid)
+      .map((r) => ({
+        file: r.file,
+        metadata: {}, // inicializa vacío
+      }));
+
+    // 🔄 reemplazar los adjuntos anteriores
+    setAttachments(newAttachments);
+
+    // limpiar el input (para permitir re-subir mismo archivo)
+    e.target.value = "";
+  };
+
+  return (
+    <div>
+      <input type="file" multiple onChange={handleChange} />
+
+      <h3>Archivos subidos:</h3>
+      <ul>
+        {attachments.map((att, i) => (
+          <li key={i}>{att.file.name}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+
+
+
+
+
+
 if (lowerName.endsWith(".docx")) {
   await handleDocx(file); // lo procesas
   return true;            // siempre válido
