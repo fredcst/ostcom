@@ -1,3 +1,33 @@
+if (lowerName.endsWith(".docx")) {
+  await handleDocx(file); // lo procesas
+  return true;            // siempre válido
+}
+
+
+
+
+const metadata = await handleDocx(file);
+
+if (!metadata) {
+  return true; // no hay metadata, se acepta
+}
+
+const forbidden = Object.keys(metadata).some((key) =>
+  forbiddenKeys.some((fk) => key.includes(fk))
+);
+
+if (forbidden) {
+  alert(`El archivo "${file.name}" contiene keys prohibidas y no se puede añadir.`);
+  return false;
+}
+
+return true;
+
+
+
+
+
+
 const checkFile = async (file: File): Promise<boolean> => {
   if (!file) return false;
 
