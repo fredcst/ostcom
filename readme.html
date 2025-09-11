@@ -1,3 +1,62 @@
+const checkFile = async (file: File): Promise<boolean> => {
+  if (!file) return false;
+
+  const lowerName = file.name.toLowerCase();
+
+  if (lowerName.endsWith(".docx")) {
+    handleDocx(file);
+    return true; // 👈 ahora sí añade DOCX
+  } else if (lowerName.endsWith(".pdf")) {
+    try {
+      const metadataJson: Record<string, string | null> | null =
+        await readPdfMetadata(file);
+
+      if (!metadataJson) return false;
+
+      const forbidden = Object.keys(metadataJson).some((key) =>
+        forbiddenKeys.some((fk) => key.includes(fk))
+      );
+
+      if (forbidden) {
+        alert(`El archivo "${file.name}" contiene keys prohibidas y no se puede añadir.`);
+        return false;
+      }
+
+      return true;
+    } catch (err) {
+      console.error("Error leyendo PDF:", file.name, err);
+      return false;
+    }
+  } else {
+    alert(`Archivo "${file.name}" no soportado`);
+    return false;
+  }
+};
+
+const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const files = Array.from(e.target.files || []);
+
+  const results = await Promise.all(
+    files.map(async (file) => ({
+      file,
+      isValid: await checkFile(file),
+    }))
+  );
+
+  const newAttachments = results
+    .filter((r) => r.isValid)
+    .map((r) => ({
+      file: r.file,
+      metadata: {}, // Inicializa metadata vacía
+    }));
+
+  // ✅ acumular en vez de machacar
+  setAttachments((prev) => [...prev, ...newAttachments]);
+};
+
+
+
+
 import { useCallback } from "react";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.entry";
